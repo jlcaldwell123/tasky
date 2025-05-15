@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eks-tasky-deployment
+  namespace: tasky-app
+  labels:
+    app: eks-tasky-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eks-tasky-app
+  template:
+    metadata:
+      labels:
+        app: eks-tasky-app
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+                      - arm64
+      containers:
+        - name: tasky
+          image: 442426890564.dkr.ecr.us-east-1.amazonaws.com/takehome/tasky:3c2c055a2d09a1a54db35f9dfef44d83148361a7
+          ports:
+            - name: http
+              containerPort: 80
+          imagePullPolicy: IfNotPresent
+      nodeSelector:
+        kubernetes.io/os: linux
