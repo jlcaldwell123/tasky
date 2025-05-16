@@ -27,10 +27,15 @@ spec:
                       - arm64
       containers:
         - name: tasky
-          image: 442426890564.dkr.ecr.us-east-1.amazonaws.com/takehome/tasky:205c72255e15388e7397de80c6d06f36145dcdea
+          image: 442426890564.dkr.ecr.us-east-1.amazonaws.com/takehome/tasky:8020110e3efaf99729ada28166eb03835e06a990
           ports:
             - name: http
               containerPort: 80
+          env:
+            - name: MONGODB_URI
+              value: ${MONGO_URL}
+            - name: SECRET_KEY
+              value: secret123
           imagePullPolicy: IfNotPresent
       nodeSelector:
         kubernetes.io/os: linux

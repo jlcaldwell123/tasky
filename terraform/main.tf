@@ -109,6 +109,7 @@ resource "aws_route_table_association" "private-us-east-1c" {
   route_table_id = aws_route_table.private.id
 }
 
+
 # Security Group for EC2 Instance
 resource "aws_security_group" "ec2_sg" {
   name        = "ec2_sg"
@@ -305,3 +306,72 @@ resource "aws_eks_node_group" "private-nodes" {
     aws_iam_role_policy_attachment.nodes-AmazonEC2ContainerRegistryReadOnly,
   ]
 }
+
+module "lb_role" {
+ source = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+
+ role_name                              = "tasky_app_eks_lb"
+ attach_load_balancer_controller_policy = true
+
+ oidc_providers = {
+     main = {
+     provider_arn               = aws_eks_cluster.demo.oidc_provider_arn
+     namespace_service_accounts = ["kube-system:aws-load-balancer-controller"]
+     }
+ }
+ }
+
+ resource "kubernetes_service_account" "service-account" {
+  metadata {
+      name      = "aws-load-balancer-controller"
+      namespace = "kube-system"
+      labels = {
+      "app.kubernetes.io/name"      = "aws-load-balancer-controller"
+      "app.kubernetes.io/component" = "controller"
+      }
+      annotations = {
+      "eks.amazonaws.com/role-arn"               = module.lb_role.iam_role_arn
+      "eks.amazonaws.com/sts-regional-endpoints" = "true"
+      }
+  }
+  }
+
+  resource "helm_release" "alb-controller" {
+   name       = "aws-load-balancer-controller"
+   repository = "https://aws.github.io/eks-charts"
+   chart      = "aws-load-balancer-controller"
+   namespace  = "kube-system"
+   depends_on = [
+       kubernetes_service_account.service-account
+   ]
+
+   set {
+       name  = "region"
+       value = "us-east-1"
+   }
+
+   set {
+       name  = "vpcId"
+       value = aws_vpc.my_vpc
+   }
+
+   set {
+       name  = "image.repository"
+       value = "602401143452.dkr.ecr.us-east-1.amazonaws.com/amazon/aws-load-balancer-controller"
+   }
+
+   set {
+       name  = "serviceAccount.create"
+       value = "false"
+   }
+
+   set {
+       name  = "serviceAccount.name"
+       value = "aws-load-balancer-controller"
+   }
+
+   set {
+       name  = "clusterName"
+       value = "demo"
+   }
+   }
