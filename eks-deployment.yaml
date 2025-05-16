@@ -27,7 +27,7 @@ spec:
                       - arm64
       containers:
         - name: tasky
-          image: 442426890564.dkr.ecr.us-east-1.amazonaws.com/takehome/tasky:3c2c055a2d09a1a54db35f9dfef44d83148361a7
+          image: 442426890564.dkr.ecr.us-east-1.amazonaws.com/takehome/tasky:aa1416aba0356dd30ed4f287ada824d750f4e5c1
           ports:
             - name: http
               containerPort: 80
