@@ -2,6 +2,29 @@ provider "aws" {
   region = "us-east-1"
 }
 
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    # This requires the awscli to be installed locally where Terraform is executed
+    args = ["eks", "get-token", "--cluster-name", "demo"]
+  }
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = module.eks.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      args        = ["eks", "get-token", "--cluster-name", "demo"]
+      command     = "aws"
+    }
+  }
+}
+
 terraform {
   required_providers {
     aws = {
@@ -25,10 +48,23 @@ resource "aws_vpc" "my_vpc" {
 resource "aws_subnet" "my_subnet_1" {
   vpc_id                  = aws_vpc.my_vpc.id
   cidr_block              = "10.0.4.0/24"
-  availability_zone       = "us-east-1a"
+  availability_zone       = "us-east-1b"
   map_public_ip_on_launch = true
   tags = {
     Name = "vm_subnet_public"
+    "kubernetes.io/role/elb"     = "1" #this instruct the kubernetes to create public load balancer in these subnets
+    "kubernetes.io/cluster/demo" = "owned"
+  }
+}
+
+# Subnets (Public)
+resource "aws_subnet" "my_subnet_1c" {
+  vpc_id                  = aws_vpc.my_vpc.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "us-east-1c"
+  map_public_ip_on_launch = true
+  tags = {
+    Name = "second_subnet_public"
     "kubernetes.io/role/elb"     = "1" #this instruct the kubernetes to create public load balancer in these subnets
     "kubernetes.io/cluster/demo" = "owned"
   }
@@ -54,7 +90,7 @@ resource "aws_subnet" "subnet_us_east_1c_private" {
   map_public_ip_on_launch = false  # Private subnet
 
   tags = {
-    Name = "subnet_us_east_1b_private"
+    Name = "subnet_us_east_1c_private"
     "kubernetes.io/role/internal-elb" = "1"
     "kubernetes.io/cluster/demo"      = "owned"
   }
@@ -99,6 +135,12 @@ resource "aws_route_table_association" "my_subnet_association" {
   route_table_id = aws_route_table.my_route_table.id
 }
 
+# Associate the route table with the subnet
+resource "aws_route_table_association" "public-subnet-us-east-1b" {
+  subnet_id      = aws_subnet.my_subnet_1c.id
+  route_table_id = aws_route_table.my_route_table.id
+}
+
 resource "aws_route_table_association" "private-us-east-1b" {
   subnet_id      = aws_subnet.subnet_us_east_1b_private.id
   route_table_id = aws_route_table.private.id
@@ -126,7 +168,7 @@ resource "aws_security_group" "ec2_sg" {
     from_port = 27017
     to_port   = 27017
     protocol  = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["10.0.2.0/24", "10.0.3.0/24"]
   }
   egress {
     from_port = 0
@@ -136,26 +178,77 @@ resource "aws_security_group" "ec2_sg" {
    }
 }
 
+resource "aws_iam_role" "ec2_role" {
+  name = "ec2_permissive_role"
+
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
+
+  tags = {
+      Name = "EC2 IAM Role"
+  }
+}
+
+resource "aws_iam_role_policy" "ec2_policy" {
+  name = "test_policy"
+  role = aws_iam_role.ec2_role.id
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "s3:*",
+        "ec2:*",
+        "iam:*",
+        "eks:*"
+      ],
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "ec2_profile"
+  role = aws_iam_role.ec2_role.name
+}
+
 resource "aws_key_pair" "ssh_keypair" {
   key_name   = "jimmyc-keypair"
   public_key = file("~/.ssh/id_ed25519.pub")
 }
 # EC2 Instance
 resource "aws_instance" "my_instance" {
-  ami             = "ami-0fc5d935ebf8bc3bc" # Ubuntu 20.04 LTS
+  ami             = "ami-055744c75048d8296" # Ubuntu 18.04 LTS
   instance_type   = "t2.micro"
   key_name        = aws_key_pair.ssh_keypair.key_name
   subnet_id       = aws_subnet.my_subnet_1.id
   security_groups  = [aws_security_group.ec2_sg.id]
   associate_public_ip_address = true
+  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
   user_data = <<-EOF
               #!/bin/bash
               apt-get update
               apt-get install gnupg curl
-              curl -fsSL https://pgp.mongodb.com/server-7.0.asc | \
-              gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg \
-              --dearmor
-              echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+              curl -fsSL https://www.mongodb.org/static/pgp/server-4.4.asc | sudo apt-key add -
+              echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu bionic/mongodb-org/4.4 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-4.4.list
               apt-get update
               apt-get install -y mongodb-org
               systemctl start mongod
@@ -165,6 +258,24 @@ resource "aws_instance" "my_instance" {
     Name = "mg-db-server"
 
  }
+}
+
+resource "aws_s3_bucket" "db_backup_bucket" {
+  bucket = "db-backup-bucket-05162025"
+}
+
+resource "aws_s3_bucket_ownership_controls" "db_backup_bucket" {
+  bucket = aws_s3_bucket.db_backup_bucket.id
+  rule {
+    object_ownership = "BucketOwnerPreferred"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "db_backup_bucket" {
+  bucket = aws_s3_bucket.db_backup_bucket.id
+
+  block_public_acls   = false
+  block_public_policy = false
 }
 
 resource "aws_eip" "nat" {
@@ -219,22 +330,78 @@ resource "aws_iam_role_policy_attachment" "demo-AmazonEKSClusterPolicy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
-# bare minimum requirement of eks
+resource "aws_security_group" "eks" {
+    name        = "tasky-app eks cluster"
+    description = "Allow traffic"
+    vpc_id      = aws_vpc.my_vpc.id
 
-resource "aws_eks_cluster" "demo" {
-  name     = "demo"
-  role_arn = aws_iam_role.demo.arn
+    ingress {
+      description      = "World"
+      from_port        = 0
+      to_port          = 0
+      protocol         = "-1"
+      cidr_blocks      = ["0.0.0.0/0"]
+      ipv6_cidr_blocks = ["::/0"]
+    }
 
-  vpc_config {
-    subnet_ids = [
-      aws_subnet.subnet_us_east_1b_private.id,
-      aws_subnet.subnet_us_east_1c_private.id,
-      aws_subnet.my_subnet_1.id
-    ]
+    egress {
+      from_port        = 0
+      to_port          = 0
+      protocol         = "-1"
+      cidr_blocks      = ["0.0.0.0/0"]
+      ipv6_cidr_blocks = ["::/0"]
+    }
+
+    tags = {
+       Name = "EKS tasky",
+       "kubernetes.io/cluster/demo": "owned"
+    }
   }
 
-  depends_on = [aws_iam_role_policy_attachment.demo-AmazonEKSClusterPolicy]
-}
+module "eks" {
+    source = "terraform-aws-modules/eks/aws"
+    version = "18.19.0"
+
+    cluster_name                    = "demo"
+    cluster_version                 = "1.27"
+    cluster_endpoint_private_access = true
+    cluster_endpoint_public_access  = true
+    cluster_additional_security_group_ids = [aws_security_group.eks.id]
+
+    vpc_id     = aws_vpc.my_vpc.id
+    subnet_ids = [
+        aws_subnet.subnet_us_east_1b_private.id,
+        aws_subnet.subnet_us_east_1c_private.id
+    ]
+
+    eks_managed_node_group_defaults = {
+      ami_type               = "AL2_x86_64"
+      disk_size              = 50
+      instance_types         = ["t2.small", "t2.small"]
+      vpc_security_group_ids = [aws_security_group.eks.id]
+    }
+
+    eks_managed_node_groups = {
+      green = {
+        min_size     = 1
+        max_size     = 1
+        desired_size = 1
+
+        instance_types = ["t2.small"]
+        capacity_type  = "SPOT"
+        # labels = "tasky-app"
+        taints = {
+        }
+        tags = {
+            Name = "tasky-node"
+        }
+      }
+    }
+
+    tags = {
+        Name = "tasky-eks-cluster"
+    }
+  }
 
 # role for nodegroup
 
@@ -270,43 +437,6 @@ resource "aws_iam_role_policy_attachment" "nodes-AmazonEC2ContainerRegistryReadO
   role       = aws_iam_role.nodes.name
 }
 
-
-# aws node group
-
-resource "aws_eks_node_group" "private-nodes" {
-  cluster_name    = aws_eks_cluster.demo.name
-  node_group_name = "private-nodes"
-  node_role_arn   = aws_iam_role.nodes.arn
-
-  subnet_ids = [
-    aws_subnet.subnet_us_east_1b_private.id,
-    aws_subnet.subnet_us_east_1c_private.id
-  ]
-
-  capacity_type  = "ON_DEMAND"
-  instance_types = ["t2.small"]
-
-  scaling_config {
-    desired_size = 1
-    max_size     = 1
-    min_size     = 1
-  }
-
-  update_config {
-    max_unavailable = 1
-  }
-
-  labels = {
-    node = "kubenode02"
-  }
-
-  depends_on = [
-    aws_iam_role_policy_attachment.nodes-AmazonEKSWorkerNodePolicy,
-    aws_iam_role_policy_attachment.nodes-AmazonEKS_CNI_Policy,
-    aws_iam_role_policy_attachment.nodes-AmazonEC2ContainerRegistryReadOnly,
-  ]
-}
-
 module "lb_role" {
  source = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
 
@@ -315,7 +445,7 @@ module "lb_role" {
 
  oidc_providers = {
      main = {
-     provider_arn               = aws_eks_cluster.demo.oidc_provider_arn
+     provider_arn               = module.eks.oidc_provider_arn
      namespace_service_accounts = ["kube-system:aws-load-balancer-controller"]
      }
  }
@@ -352,7 +482,7 @@ module "lb_role" {
 
    set {
        name  = "vpcId"
-       value = aws_vpc.my_vpc
+       value = aws_vpc.my_vpc.id
    }
 
    set {

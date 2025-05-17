@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskyserver
+  namespace: tasky-app
+spec:
+  ports:
+    - port: 8080
+      protocol: TCP
+  type: NodePort
+  selector:
+    app: eks-tasky-app
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: taskyserver
+  namespace: tasky-app
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: taskyserver
+                port:
+                  number: 8080

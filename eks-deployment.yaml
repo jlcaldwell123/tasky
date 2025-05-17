@@ -1,3 +1,32 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-admin
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cluster-admin-service-account
+  namespace: tasky-app
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-admin-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: cluster-admin-service-account
+    namespace: tasky-app
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,6 +44,7 @@ spec:
       labels:
         app: eks-tasky-app
     spec:
+      serviceAccountName: cluster-admin-service-account
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -30,10 +60,10 @@ spec:
           image: 442426890564.dkr.ecr.us-east-1.amazonaws.com/takehome/tasky:8020110e3efaf99729ada28166eb03835e06a990
           ports:
             - name: http
-              containerPort: 80
+              containerPort: 8080
           env:
             - name: MONGODB_URI
-              value: ${MONGO_URL}
+              value: MONGO_URI_VALUE
             - name: SECRET_KEY
               value: secret123
           imagePullPolicy: IfNotPresent

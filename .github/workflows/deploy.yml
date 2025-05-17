@@ -1,0 +1,33 @@
+name: Deploy to Amazon ECR
+
+on: workflow_dispatch
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: takehome/tasky
+  CONTAINER_NAME: tasky
+  EKS_CLUSTER_NAME: demo
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@0e613a0980cbf65ed5b322eb7a1e075d28913a83
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Update kube config
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
+
+      - name: Deploy to EKS
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.commit.outputs.short }}
+        run: |
+          sed -i.bak "s|MONGO_URI_VALUE|${{ secrets.MONGO_URL }}|g" eks-deployment.yaml && \
+          kubectl apply -f eks-deployment.yaml
