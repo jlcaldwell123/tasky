@@ -41,8 +41,8 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          highCVE=$(aws ecr describe-image-scan-findings --repository-name takehome/tasky --image-id imageTag=1bca93a901d144090f3a2deac8f32101262fe4e9 | jq -r '.imageScanFindings.findingSeverityCounts.HIGH') 
-          if [ "$highCVE" -gt 10 ]; then
+          criticalCVE=$(aws ecr describe-image-scan-findings --repository-name takehome/tasky --image-id imageTag=1bca93a901d144090f3a2deac8f32101262fe4e9 | jq -r '.imageScanFindings.findingSeverityCounts.CRITICAL') 
+          if [ "$criticalCVE" -gt 0 ]; then
                       echo "::error::Failing due to many High vulnerabilities: $highCVE"
                       exit 1
           fi
