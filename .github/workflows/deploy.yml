@@ -24,10 +24,14 @@ jobs:
       - name: Update kube config
         run: aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
 
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@62f4f872db3836360b72999f4b87f1ff13310f3a
+
       - name: Deploy to EKS
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ steps.commit.outputs.short }}
         run: |
-          sed -i.bak "s|MONGO_URI_VALUE|${{ secrets.MONGO_URL }}|g" eks-deployment.yaml && \
-          kubectl apply -f eks-deployment.yaml
+          ls -ltr
+          sed -i.bak "s|MONGO_URI_VALUE|${{ secrets.MONGO_URL }}|g" ./eks-deployment.yaml && \
+          kubectl apply -f ./eks-deployment.yaml
