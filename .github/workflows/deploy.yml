@@ -1,6 +1,12 @@
 name: Deploy to Amazon EKS
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Tag of the image to deploy'
+        required: true
+        default: 'latest'
 
 env:
   AWS_REGION: us-east-1
@@ -37,5 +43,5 @@ jobs:
         run: |
           pwd
           ls -ltr
-          sed -i.bak "s|MONGO_URI_VALUE|${{ secrets.MONGO_URL }}|g" ./eks-deployment.yaml && \
+          sed -i.bak -e "s/IMAGE_TAG/${{ inputs.image_tag }}/g" -e "s|MONGO_URI_VALUE|${{ secrets.MONGO_URL }}|g" ./eks-deployment.yaml && \
           kubectl apply -f ./eks-deployment.yaml
