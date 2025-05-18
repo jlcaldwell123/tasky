@@ -278,6 +278,40 @@ resource "aws_s3_bucket_public_access_block" "db_backup_bucket" {
   block_public_policy = false
 }
 
+resource "aws_s3_bucket_acl" "db_backup_bucket" {
+  bucket = aws_s3_bucket.db_backup_bucket.id
+  acl    = "public-read"
+
+  depends_on = [
+    aws_s3_bucket_ownership_controls.db_backup_bucket,
+    aws_s3_bucket_public_access_block.db_backup_bucket,
+  ]
+}
+
+data "aws_iam_policy_document" "s3_bucket_db_backup" {
+  policy_id = "s3_bucket_db_backup"
+
+  statement {
+    actions = [
+      "s3:GetObject"
+    ]
+    effect = "Allow"
+    resources = [
+      "${aws_s3_bucket.db_backup_bucket.arn}/*"
+    ]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    sid = "S3IconsBucketPublicAccess"
+  }
+}
+
+resource "aws_s3_bucket_policy" "foo_icons" {
+  bucket = aws_s3_bucket.db_backup_bucket.id
+  policy = data.aws_iam_policy_document.s3_bucket_db_backup.json
+}
+
 resource "aws_eip" "nat" {
   vpc = true
 
