@@ -232,7 +232,7 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 
 resource "aws_key_pair" "ssh_keypair" {
   key_name   = "jimmyc-keypair"
-  public_key = file("~/.ssh/id_ed25519.pub")
+  public_key = file("./id_ed25519.pub")
 }
 # EC2 Instance
 resource "aws_instance" "my_instance" {
