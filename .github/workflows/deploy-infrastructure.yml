@@ -20,9 +20,7 @@ jobs:
           aws-region: us-east-1
       - name: Initialise project and view terraform plan
         run: |
-          ls
           cd terraform 
-          cd qa
           terraform fmt
           terraform init 
           terraform plan
