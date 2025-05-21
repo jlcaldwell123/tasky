@@ -25,7 +25,8 @@ jobs:
           terraform plan --out tfplan.binary
           terraform show -json tfplan.binary > tfplan.json
           misconfigs=$(trivy config --severity CRITICAL -f json ./tfplan.json | jq -r '.Results[1].Misconfigurations' | jq length)
-          if [ "misconfigs" -gt 10 ]; then
+          echo $misconfigs
+          if [ "$misconfigs" -gt 10 ]; then
             echo "::error::Failing due to many Critical infrastructure misconfigurations: misconfigs"
             exit 1
           fi
