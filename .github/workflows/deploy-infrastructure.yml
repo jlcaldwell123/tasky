@@ -29,6 +29,7 @@ jobs:
           echo "trivy setup"
           trivy -v
           misconfigs=$(trivy config --severity CRITICAL -f json ./tfplan.json | jq -r '.Results[1].Misconfigurations' | jq length)
+          echo "trivy done"
           echo $misconfigs
           if [ "$misconfigs" -gt 10 ]; then
             echo "::error::Failing due to many Critical infrastructure misconfigurations: misconfigs"
