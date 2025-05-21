@@ -24,8 +24,8 @@ jobs:
           terraform init
           terraform plan --out tfplan.binary
           terraform show -json tfplan.binary > tfplan.json
-          wget https://github.com/aquasecurity/trivy/releases/download/v0.18.3/trivy_0.18.3_Linux-64bit.deb
-          sudo dpkg -i trivy_0.18.3_Linux-64bit.deb
+          wget https://github.com/aquasecurity/trivy/releases/download/v0.41.0/trivy_0.41.0_Linux-64bit.deb
+          sudo dpkg -i trivy_0.41.0_Linux-64bit.deb
           echo "trivy setup"
           trivy -v
           misconfigs=$(trivy config --severity CRITICAL -f json ./tfplan.json | jq -r '.Results[1].Misconfigurations' | jq length)
